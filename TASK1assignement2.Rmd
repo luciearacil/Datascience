@@ -1,0 +1,282 @@
+---
+title: "taskassignement2"
+author: "moi"
+date: "22/09/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(httr)
+library(rjstat)
+library(stringr)
+library(dplyr)
+library(lubridate)
+library(knitr)
+library(DT)
+library(DataExplorer)
+library(ggplot2)
+library(tidyr)
+
+```
+
+# Download table
+
+```{r}
+
+url="http://data.ssb.no/api/v0/dataset/95274.json?lang=no"
+datanew=GET(url)
+str(datanew)
+datanewtext=content(datanew,as="text")
+datanewparsed=content(datanew,as="parsed")
+dataJson=fromJSONstat(datanewtext)
+dataJson
+str(dataJson)
+
+dataJ=dataJson$`03616: Hotell og liknande overnattingsbedrifter. Kapasitetsutnytting og pris per rom, etter region, måned og statistikkvariabel`
+
+url="http://data.ssb.no/api/v0/dataset/95276.json?lang=no"
+data2=GET(url)
+str(data2)
+data2text=content(data2,as="text")
+data2parsed=content(data2,as="parsed")
+dataJson2=fromJSONstat(data2text)
+dataJson2
+str(dataJson2)
+
+dataJ2=dataJson2$`03616: Hotell og liknande overnattingsbedrifter. Kapasitetsutnytting og pris per rom, etter region, måned og statistikkvariabel`
+
+
+```
+# The names of the four columns in english
+```{r}
+
+dataJ=dataJ%>%rename("Date"="måned" ,"Variables"="statistikkvariabel")
+dataJ2=dataJ2%>%rename("Date"="måned" ,"Variables"="statistikkvariabel")
+
+```
+
+# Change the Date Format
+```{r}
+
+dataJ$Date =as.character(dataJ$Date)
+dataJ$Date = str_replace(dataJ$Date,"M", "01")
+dataJ$Date = as.Date(dataJ$Date, format="%Y%d%m")
+
+dataJ2$Date =as.character(dataJ2$Date)
+dataJ2$Date = str_replace(dataJ2$Date,"M", "01")
+dataJ2$Date =as.Date(dataJ2$Date, format="%Y%d%m")
+
+```
+
+# Recode the Norwegian labels into English.
+
+```{r}
+
+dataJ$Variables <- recode(dataJ$Variables, 
+       "Kapasitetsutnytting av senger (prosent)" = "Beds percentage capacity utilization",
+       "Kapasitetsutnytting av rom (prosent)" = "Rooms percentage capacity utilization",
+       "Pris per rom (kr)" = "Price per room (kr)")
+
+dataJ2$Variables <- recode(dataJ2$Variables, 
+       "Kapasitetsutnytting av senger (prosent)" = "Beds percentage capacity utilization",
+       "Kapasitetsutnytting av rom (prosent)" = "Rooms percentage capacity utilization",
+       "Pris per rom (kr)" = "Price per room (kr)")
+
+```
+
+
+# Merge the two dataframes
+
+```{r}
+
+dataJ <- mutate(dataJ, df = "dataJ")
+dataJ2<- mutate(dataJ2, df = "dataJ2")
+DATA <- rbind(dataJ, dataJ2)
+
+```
+
+# Calculate the difference between county average room price and the national average room price per month. 
+
+```{r}
+
+dataJ$month = format(dataJ$Date,"%m")
+dataJ2$month = format(dataJ2$Date,"%m")
+
+dataJ_average = dataJ %>% 
+                filter(value != 0.0, Variables == "Price per room (kr)") %>% 
+                group_by(month) %>% 
+                summarise(mean_priceroom_dataJ = mean(value))
+
+
+dataJ2_average = dataJ2 %>% 
+                filter(value != 0.0, Variables == "Price per room (kr)") %>% 
+                group_by(month) %>% 
+                summarise(mean_priceroom_dataJ2 = mean(value))
+
+
+
+AVERAGE_PRICE= left_join(dataJ_average,dataJ2_average,by="month")
+
+AVERAGE_PRICE$diff = AVERAGE_PRICE$mean_priceroom_dataJ-AVERAGE_PRICE$mean_priceroom_dataJ2
+
+plot(x= AVERAGE_PRICE$month, y = AVERAGE_PRICE$diff, type = "l", col="red",
+     xlab="month", 
+     ylab="Room price difference", 
+     main="Difference of average room price")
+
+
+```
+
+# What county (on average) has the highest positive and negative difference in price?
+
+
+```{r, results="asis"}
+
+dataJ_average_mr = dataJ %>% 
+                filter(value != 0.0, Variables == "Price per room (kr)") %>% 
+                group_by(month,region) %>% 
+                summarise(mean_priceroom_dataJ = mean(value))
+
+
+dataJ2_average_mr = dataJ2 %>% 
+                filter(value != 0.0, Variables == "Price per room (kr)") %>% 
+                group_by(month,region) %>% 
+                summarise(mean_priceroom_dataJ2 = mean(value))
+
+
+dataJ_average_mr$diff = dataJ_average_mr $mean_priceroom_dataJ -dataJ2_average_mr$mean_priceroom_dataJ2 
+
+max_diff = str_sub(dataJ_average_mr[dataJ_average_mr$diff==max(dataJ_average_mr$diff),1])
+max_month = as.Date(paste0("2000-",max_diff,"-1"), format="%Y-%m-%d") 
+max_month_format = month(max_month, label=TRUE, abbr=FALSE)
+
+max_region = str_sub(dataJ_average_mr[dataJ_average_mr$diff==max(dataJ_average_mr$diff),2])
+
+min_diff = str_sub(dataJ_average_mr[dataJ_average_mr$diff==min(dataJ_average_mr$diff),1])
+min_month = as.Date(paste0("2000-",min_diff,"-1"), format="%Y-%m-%d") 
+min_month_format = month(min_month, label=TRUE, abbr=FALSE)
+
+min_region = str_sub(dataJ_average_mr[dataJ_average_mr$diff == min(dataJ_average_mr$diff),2])
+
+datatable(dataJ_average_mr)
+```
+
+
+**`r max_region` is the county with the highest positive difference in price, it happens for the month of `r max_month_format` whereas `r min_region` is the county with the highest negative difference in price, it happens for the month of `r min_month_format`**
+
+
+# Do the calculations above per county and per year.
+
+```{r}
+
+dataJ$year= format(dataJ$Date,"%Y")
+dataJ2$year = format(dataJ2$Date,"%Y")
+DATA$year=format(DATA$Date,"%Y")
+
+
+dataJ_AY= dataJ %>% 
+                filter(value != 0.0, Variables == "Price per room (kr)") %>% 
+                group_by(year) %>% 
+                summarise(mean_priceroom_dataJ = mean(value))
+
+
+dataJ2_AY= dataJ2 %>% 
+                filter(value != 0.0, Variables == "Price per room (kr)") %>% 
+                group_by(year) %>% 
+                summarise(mean_priceroom_dataJ2 = mean(value))
+
+fusion=left_join(dataJ_AY,dataJ2_AY,by="year")
+fusion$Diff=fusion$mean_priceroom_dataJ-fusion$mean_priceroom_dataJ2
+
+```
+
+# Make a plot ofthe price difference for Troms county from 1999 until today.
+
+```{r}
+
+plot(x= fusion$year[8:28], y = fusion$Diff[8:28], type = "l", col="purple", 
+     xlab="Year", 
+     ylab="Room price difference", 
+     main="the monthly price difference for Troms county from 1999 until today")
+
+
+```
+
+# Identify the year and county with the highest positive and negative difference.
+
+```{r, results="asis"}
+
+
+dataJ_AYR= dataJ %>% 
+                filter(value != 0.0, Variables == "Price per room (kr)") %>% 
+                group_by(year,region) %>% 
+                summarise(mean_priceroom_dataJ = mean(value))
+
+dataJ2_AYR= dataJ2 %>% 
+                filter(value != 0.0, Variables == "Price per room (kr)") %>% 
+                group_by(year,region) %>% 
+                summarise(mean_priceroom_dataJ2 = mean(value))
+
+```
+
+
+```{r, results="asis"}
+
+dataJ_AYR$diff = dataJ_AYR$mean_priceroom_dataJ - dataJ2_AYR$mean_priceroom_dataJ2
+dataJ_AYR =dataJ_AYR %>% drop_na()
+
+max_year =str_sub(dataJ_AYR[dataJ_AYR$diff== max(dataJ_AYR$diff),1])
+min_year =str_sub(dataJ_AYR[dataJ_AYR$diff== min(dataJ_AYR$diff),1])
+
+max_diff =str_sub(dataJ_AYR[dataJ_AYR$diff== max(dataJ_AYR$diff),2])
+min_diff =str_sub(dataJ_AYR[dataJ_AYR$diff== min(dataJ_AYR$diff),2])
+
+datatable(dataJ_AYR)
+
+```
+
+
+**`r max_diff` is the county with the highest positive difference in price, it happens for the year of `r max_year` whereas `r min_diff` is the county with the highest negative difference in price, it happens for the year of `r min_year`**
+
+
+# Make a plot of the monthly price difference for Troms county from 1999 until today.
+
+```{r}
+
+tromsJ = dataJ%>% filter( Date >= "1999-01-01", value != 0.0, Variables == "Price per room (kr)")
+
+tromsJ2= dataJ2  %>% filter( Date >= "1999-01-01", value != 0.0, Variables == "Price per room (kr)")
+
+tromsJ$diff= tromsJ$value - tromsJ2$value
+
+plot(x= tromsJ$Date, y = tromsJ$diff, type = "p",
+     xlab="Month", 
+     ylab="Room price difference", 
+     main="the monthly price difference for Troms county from 1999 until today")
+
+```
+
+
+
+# Per county, is there any relationship (correlation) between room capacity and price since January 2010?
+
+
+```{r}
+
+C1 <- DATA %>% 
+  filter(Variables == "Price per room (kr)") %>%
+  subset(Date>= "2010-01-01" & Date <= Sys.Date()) %>% 
+  rename(price = value) %>% 
+  select(., -c(Variables))
+ 
+C2<- DATA %>% 
+  filter(Variables == "Rooms percentage capacity utilization") %>%
+  subset(Date>= "2010-01-01" & Date <= Sys.Date()) %>% 
+  rename(rooms_capacity = value) %>% 
+  select(., -c(Variables))
+
+cor.test(C1$price, C2$rooms_capacity)
+```
+
+The pvalue of the correlation is less than 10% so we can conclude that we don't have a correlation between the price and the capacity of the room
