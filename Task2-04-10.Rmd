@@ -1,0 +1,110 @@
+---
+title: "task2assignement3"
+author: "moi"
+date: "04/10/2019"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(httr)
+library(rjstat)
+library(stringr)
+library(dplyr)
+library(lubridate)
+library(knitr)
+library(DT)
+library(DataExplorer)
+library(ggplot2)
+library(tidyr)
+#install.packages('rvest')
+library(rvest)
+library(xml2)
+library(lubridate)
+
+```
+```{r}
+# downald the data
+table=read_html("https://w2.brreg.no/kunngjoring/kombisok.jsp?datoFra=01.01.2018&datoTil=01.01.2019&id_region=100&id_fylke=-+-+-&id_niva1=2&id_bransje1=0")
+
+# scraping
+
+node <- html_nodes(table, xpath = "//table") 
+node2 <- html_nodes(node, "table")
+
+#Turning the data to an html table
+database <- html_table(node2[[1]])
+
+
+# we need to keep only columns X2, 4 and X6 and rowq from 6 to 3212
+
+newtable <- database%>% 
+               select(X2,X4,X6) %>% #keeping columns with data
+               slice(6:3212) %>% # keeping rows with data
+               rename(Company_Name = X2, Phone = X4, Date_of_Registration= X6)   
+
+# we need to create a new column couty            
+newtable= newtable %>%
+           mutate(county = "") 
+
+# so that the county information is put in our new county column we need to detect it first
+# To finding the corresponding row we made a  keyword search directly in the dataset
+  #Nordland = row 1
+  #Troms = row 1512
+  #Finnmark = row 2644
+
+# Now we can complete our column county 
+
+newtable[c(2:1510),"county"] <- "nordland"
+newtable[c(1513:2642),"county"] <- "troms"
+newtable[c(2645:3207),"county"] <- "finnmark"
+
+#Now we can cancel unuseless rows 
+
+newtable <- newtable[-c(1,1511,1512,2643,2644),]
+
+#' Now We have the final database 
+head(newtable)
+
+```
+
+# PLOT
+
+```{r}
+
+ #Creating a month variable
+
+newtable$Date_of_Registration <- as.Date(newtable$Date_of_Registration, format="%d.%m.%Y") #Getting date of registration to date format
+
+newtable$month <- month(newtable$Date_of_Registration, label=TRUE, abbr=FALSE)
+
+
+# plot 1 : Number of companies registered per month
+
+ggplot(newtable, aes(month)) + 
+  geom_bar(fill="red", colour="red") + 
+  xlab("Month") + 
+  ylab("Number of companies") + 
+  ggtitle("Number of companies registered per month")
+
+
+# plot 2 : Number of companies registered per county
+
+ggplot(newtable, aes(county)) + 
+  geom_bar(fill="blue", colour="blue") + 
+  xlab("County") + 
+  ylab("Number of companies") + 
+  ggtitle("Number of companies registered per county")
+
+
+# plot 3 :Number of companies registered per month and per county
+
+ggplot(newtable, aes(month)) + 
+  geom_bar(aes(fill=county)) + 
+  xlab("Month") + 
+  ylab("Number of companies") + 
+  ggtitle("Number of companies registered per month and per county")
+  
+
+```
