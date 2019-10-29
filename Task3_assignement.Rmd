@@ -1,0 +1,89 @@
+---
+title: "Task 3"
+author: "moi"
+date: "22/10/2019"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+```
+
+# Data base
+
+```{r}
+US_births2017 <- read_fwf("../../Nat2017PublicUS.c20180516.r20180808.txt",
+fwf_positions(start = c(13,475,504),
+end = c(14,475,507),
+col_names = c("Birth","sex", "weight")))
+US_births2018 <-read_fwf("../../Nat2018PublicUS.c20190509.r20190717.txt",
+fwf_positions(start = c(13,475,504),
+end = c(14,475,507),
+col_names = c("Birth","sex", "weight")))
+
+```
+
+
+# 1 :     What is the proportion of boys to girls? Has it changed between 2017 and 2018 ?
+          What is the average birth weight in grams ?
+          
+```{r}
+B2017 <- US_births2017 %>% filter(sex == "M") %>% count()
+G2017 <- US_births2017 %>% filter(sex == "F") %>% count()
+
+pB2017 <- B2017 / (B2017+G2017)
+pG2017 <- G2017 / (B2017+G2017)
+
+B2018 <- US_births2018 %>% filter(sex == "M") %>% count()
+G2018 <- US_births2018 %>% filter(sex == "F") %>% count()
+
+pB2018 <- B2018 / (Boys2018+Girls2018)
+pG2018 <- G2018 / (Boys2018+Girls2018)
+
+```
+**The proportion of girls in 2017 was `r pG2017 * 100` (and `r pB2017 * 100 ` boys ) in 2018 they were `r pG2018 * 100 ` girls (and  `r pB2018 *100 ` boys). There is no main difference between the number of boys and girls born in 2017 and 2018 **
+
+```{r}
+US_births2017$weight <- as.numeric(US_births2017$weight)
+US_births2018$weight <- as.numeric(US_births2018$weight)
+
+average_weight2017 <- summarize(US_births2017, average_weight = mean(US_births2017$weight))
+average_weight2018 <- summarize(US_births2018, average_weight = mean(US_births2018$weight))
+```
+
+**In 2017 the average birth weight was `r average_weight2017`in grams whereas in 2018 it was `r average_weight2018` in grams **
+
+
+# 2 :     Make a density plot on the birth weight between boys and girls in 2018. Is it                   different?
+```{r}
+ggplot(US_births2018, aes(x=weight, fill=sex)) + geom_density() +  ggtitle("US Birth weight of boys and girls in 2018")
+```
+
+# 3 :     Does the average birth weight vary by month and year? 
+
+
+```{r}
+
+# We will Merging the two dataframes into one
+US_births2017 <- mutate(US_births2017, year="2017")
+US_births2018 <- mutate(US_births2018, year="2018")
+Births <- rbind(US_births2017, US_births2018)
+
+#  creating a new column for month and year 
+
+average_weight_m <- data %>% group_by(year, Birth) %>%
+summarize(average_weight = mean(weight))%>%
+unite("month_year", year, Birth, sep="/")
+
+#plot
+ggplot(average_weight_month, aes(x=month_year, y=average_weight)) + geom_line() +
+  ggtitle("US average birth weight from 2017 to 2018")
+
+```
+**It looks like in the start of the year babies weight less than those who are born in summer**
+```
