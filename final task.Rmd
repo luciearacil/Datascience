@@ -1,0 +1,144 @@
+---
+title: "Task"
+author: "moi"
+date: "17/11/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mosaic)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tidyverse)
+library(DT)
+# install.packages('cowplot')
+library(cowplot)
+#install.packages('forecast')
+library(forecast)
+#install.packages('Metrics')
+library(Metrics)
+
+```
+```{r}
+# Dowload Data
+data <- read.csv("storedata.csv")
+```
+```{r}
+## 1: For the last 3 months of 2017, calculate the total Sales by month, for Region 1 and         Region 9 in the Customer_Segment, Corporate and Consumer. This output is Table 1.
+
+# Changing class of time colomn 
+class(data$Order_Date)
+data$Order_Date=as.Date(data$Order_Date,"%Y-%m-%d")
+data$Order_Date <- format(data$Order_Date,"%Y-%m")
+
+         
+# Filter the last 3 , Region, Customer_segment 
+Table1=data%>% filter(Order_Date >="2017-10",Region==c("Region 1","Region 9"),Customer_Segment==c("Corporate","Consumer"))%>%  group_by(Order_Date, Region, Customer_Segment) %>% summarise(total_sales = sum(Sales))
+
+datatable(Table1)
+
+```
+```{r}
+
+## 2: Make a plot of the monthly total Sales in Region 1 and Region 13 in 2015, 2016 and          2017. This output is Figure 1.
+
+
+plot1 = data %>% filter(Region==c("Region 1","Region 13"),
+                        Order_Date>="2015-01",Order_Date<"2016-01") %>%
+  group_by(Region,Order_Date) %>% summarise(total_sales = sum(Sales))%>%
+  ggplot(.,aes(x=Order_Date, y=total_sales,fill=Region))+
+  geom_bar(stat="identity", position=position_dodge()) +
+  labs(title = "2015")+ 
+  theme(axis.text.x = element_text(angle=90))
+plot2 = data %>% filter(Region==c("Region 1","Region 13"),
+                        Order_Date>="2016-01",Order_Date<"2017-01") %>%
+  group_by(Region,Order_Date) %>% summarise(total_sales = sum(Sales))%>%
+  ggplot(.,aes(x=Order_Date, y=total_sales,fill=Region))+
+  geom_bar(stat="identity", position=position_dodge()) +
+  labs(title = "2016")+ 
+  theme(axis.text.x = element_text(angle=90))
+plot3 = data %>% filter(Region==c("Region 1","Region 13"),
+                        Order_Date>="2017-01") %>%
+  group_by(Region,Order_Date) %>% summarise(total_sales = sum(Sales))%>%
+  ggplot(.,aes(x=Order_Date, y=total_sales,fill=Region))+
+  geom_bar(stat="identity", position=position_dodge()) +
+  labs(title = ":2017")+ 
+  theme(axis.text.x = element_text(angle=90))
+
+Figure1=plot_grid(plot1, plot2, plot3)
+Figure1
+
+
+```
+
+```{r}
+## 3: In Figure 1, identify the months where the total Sales in Region 13 is greater than         the total Sales in Region 1. This output is Table 2.
+
+Reg1=data %>% filter(Order_Date >="2015-01",Region=="Region 1")%>% group_by(Order_Date)%>% summarise(total_sales1 = sum(Sales))
+Reg13=data %>% filter(Order_Date >="2015-01",Region=="Region 13")%>% group_by(Order_Date)%>% summarise(total_sales13 = sum(Sales))
+
+Datadiff= inner_join(Reg1,Reg13,by="Order_Date")
+Datadiff$Diff=Datadiff$total_sales13-Datadiff$total_sales1
+
+Table2=Datadiff %>% filter(Diff>0)%>%select("Order_Date","Diff")
+datatable(Table2)
+
+```
+```{r}
+## 4: Find average Profit per Customer_Segment and Product_Category in 2017, for all          regions except Region 3, 5 and 8. What segment produced the highest average              profit?This output is Table 3.
+
+Tab3=data %>% filter(Order_Date>="2017-01") %>%
+  filter(Region != c("Region 3","Region 5", "Region 8"))%>%
+  group_by(Customer_Segment,Product_Category)%>%
+  summarise(Average_Profit = sum(Profit))
+
+maxp=max(Tab3$Average_Profit)
+Table3=Tab3 %>% filter(Average_Profit == maxp)
+datatable(Table3)
+
+```
+```{r}
+
+## 5: You are asked to estimate a SARIMA model on the aggregated monthly Order_Quantity        in the Customer_Segment; Small Business and Product_Category; Office Supplies.
+
+# create month and year column
+data=separate( data, Order_Date, into=c("Year","Month"), sep = "-",remove=T)
+
+# data from204 to 2016
+data2014_16= data %>%
+  filter(Customer_Segment == "Small Business" & 
+           Product_Category == "Office Supplies") %>%
+  group_by(Year, Month, Customer_Segment, Product_Category) %>%
+  summarise(Tot_Order_Quantity = sum(Order_Quantity)) %>%
+  filter(Year != "2017")
+
+# Observed data for 2017
+data2017=data %>%
+  filter(Customer_Segment == "Small Business" &
+           Product_Category == "Office Supplies") %>%
+  group_by(Year, Month, Customer_Segment, Product_Category) %>%
+  summarise(Tot_Order_Quantity = sum(Order_Quantity)) %>%
+  filter(Year == "2017") 
+plot2017=plot(data2017$Month,y=data2017$Tot_Order_Quantity,type="l",color="red")
+# this function dosn't work RMSE=rmse(data2017$Tot_Order_Quantity, predict(model, Tot_))
+
+# uniformed time serie 
+ts_data2014_16=ts(data2014_16$Tot_Order_Quantity,frequency=12, start=c(2014,1))
+
+# model
+model=arima(ts_data2014_16, order=c(0,0,0), seasonal = list(order = c(1,0,2)))
+model
+library(broom)
+model2 <- glance(model)
+
+# This didn't works : rmse(data2017$Tot_Order_Quantity,predict(model2,Tot_Order_Quantity))
+
+modelforecast=predict(model)
+
+plotforecast <- forecast(model, h=11) %>% autoplot(xlab="Time", ylab="Total ordered quantity",main="Total ordered quantity per month with predictions in blue")
+
+
+
+```
